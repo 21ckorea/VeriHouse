@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+PublicDataReader
+requests
+beautifulsoup4
+pydantic
+pandas
+python-multipart
+lxml
+playwright>=1.40.0
+python-dotenv
