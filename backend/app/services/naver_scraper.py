@@ -77,23 +77,37 @@ class NaverLandScraper:
         )
 
     # ── 내부 GET 헬퍼 ────────────────────────────────────────
-    def _get_json(self, url: str, delay: float = 0.4) -> dict | None:
-        """curl_cffi로 JSON API를 호출하고 결과를 반환합니다."""
-        try:
-            res = self._session.get(
-                url,
-                headers=_FIN_HEADERS,
-                impersonate="chrome",
-                timeout=12,
-            )
-            time.sleep(delay)
-            if res.status_code == 200:
-                return res.json()
-            logger.warning(f"HTTP {res.status_code} for {url}")
-            return None
-        except Exception as e:
-            logger.error(f"Request error for {url}: {e}")
-            return None
+    def _get_json(self, url: str, delay: float = 1.0) -> dict | None:
+        """curl_cffi로 JSON API를 호출하고 결과를 반환합니다. 429 및 타임아웃 시 재시도합니다."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                res = self._session.get(
+                    url,
+                    headers=_FIN_HEADERS,
+                    impersonate="chrome",
+                    timeout=15,
+                )
+                time.sleep(delay)
+                if res.status_code == 200:
+                    return res.json()
+                elif res.status_code == 429:
+                    wait_time = 3 * (attempt + 1)
+                    logger.warning(f"HTTP 429 for {url}. Waiting {wait_time}s and retrying...")
+                    time.sleep(wait_time)
+                    continue
+                logger.warning(f"HTTP {res.status_code} for {url}")
+                return None
+            except Exception as e:
+                # Connection reset or timeout handling
+                if attempt < max_retries - 1:
+                    wait_time = 3 * (attempt + 1)
+                    logger.warning(f"Request error for {url} (Attempt {attempt+1}/{max_retries}): {e}. Waiting {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Request error for {url} after {max_retries} attempts: {e}")
+                    return None
+        return None
 
     # ── 매물 상세 정보 수집 (메인) ───────────────────────────
     def get_article_details(self, article_no_or_url: str, pnu_code: str = "") -> dict:
@@ -157,50 +171,79 @@ class NaverLandScraper:
             try:
                 logger.info(f"PNU code not provided. Dynamically resolving for article {article_no}")
                 article_url = f"https://fin.land.naver.com/articles/{article_no}"
-                res_redirect = self._session.get(
-                    article_url,
-                    headers=_FIN_HEADERS,
-                    impersonate="chrome",
-                    allow_redirects=False,
-                    timeout=10,
-                )
-                redirect_url = res_redirect.headers.get("location")
-                if redirect_url:
-                    if redirect_url.startswith("/"):
-                        redirect_url = "https://fin.land.naver.com" + redirect_url
+                
+                html = ""
+                for attempt in range(3):
+                    try:
+                        res_redirect = self._session.get(
+                            article_url,
+                            headers=_FIN_HEADERS,
+                            impersonate="chrome",
+                            allow_redirects=False,
+                            timeout=15,
+                        )
+                        time.sleep(1.0)
+                        
+                        if res_redirect.status_code == 429:
+                            wait_time = 3 * (attempt + 1)
+                            logger.warning(f"HTTP 429 on dynamic resolve. Waiting {wait_time}s...")
+                            time.sleep(wait_time)
+                            continue
 
-                    res_map = self._session.get(
-                        redirect_url,
-                        headers=_FIN_HEADERS,
-                        impersonate="chrome",
-                        timeout=12,
+                        redirect_url = res_redirect.headers.get("location")
+                        if redirect_url:
+                            if redirect_url.startswith("/"):
+                                redirect_url = "https://fin.land.naver.com" + redirect_url
+
+                            res_map = self._session.get(
+                                redirect_url,
+                                headers=_FIN_HEADERS,
+                                impersonate="chrome",
+                                timeout=15,
+                            )
+                            time.sleep(1.0)
+                            if res_map.status_code == 200:
+                                html = res_map.text
+                                break
+                            elif res_map.status_code == 429:
+                                wait_time = 3 * (attempt + 1)
+                                logger.warning(f"HTTP 429 on map resolve. Waiting {wait_time}s...")
+                                time.sleep(wait_time)
+                                continue
+                        break
+                    except Exception as e:
+                        if attempt < 2:
+                            wait_time = 3 * (attempt + 1)
+                            logger.warning(f"Dynamic resolve error (Attempt {attempt+1}/3): {e}. Waiting {wait_time}s...")
+                            time.sleep(wait_time)
+                        else:
+                            logger.error(f"Failed to dynamically resolve meta after 3 attempts: {e}")
+                            break
+
+                if html:
+                    # PNU
+                    m_pnu = re.search(r'\\\"pnu\\\":\\\"(\d{19})\\\"', html)
+                    if m_pnu:
+                        pnu = m_pnu.group(1)
+                        result["pnu_code"] = pnu
+                        logger.info(f"Dynamically resolved PNU: {pnu}")
+
+                    # basicInfo queryKey 에서 realEstateType / tradeType 추출
+                    m_ret = re.search(
+                        r'GET /article/basicInfo.*?realEstateType\\\\+":\\\\+"([A-Z][0-9]+)', html
                     )
-                    if res_map.status_code == 200:
-                        html = res_map.text
-                        # PNU
-                        m_pnu = re.search(r'\\\"pnu\\\":\\\"(\d{19})\\\"', html)
-                        if m_pnu:
-                            pnu = m_pnu.group(1)
-                            result["pnu_code"] = pnu
-                            logger.info(f"Dynamically resolved PNU: {pnu}")
-
-                        # basicInfo queryKey 에서 realEstateType / tradeType 추출
-                        # 형식: "GET /article/basicInfo\\\",...realEstateType\\\\+\":\\\\+\"C03\\\\+\"...tradeType\\\\+\":\\\\+\"A1"
-                        m_ret = re.search(
-                            r'GET /article/basicInfo.*?realEstateType\\\\+":\\\\+"([A-Z][0-9]+)', html
-                        )
-                        m_trade = re.search(
-                            r'GET /article/basicInfo.*?tradeType\\\\+":\\\\+"([A-Z][0-9]+)', html
-                        )
-                        if m_ret:
-                            real_estate_type = m_ret.group(1)
-                            result["property_type_code"] = real_estate_type
-                            logger.info(f"Dynamically resolved realEstateType: {real_estate_type}")
-                        if m_trade:
-                            trade_type_code = m_trade.group(1)
-                            logger.info(f"Dynamically resolved tradeType: {trade_type_code}")
+                    m_trade = re.search(
+                        r'GET /article/basicInfo.*?tradeType\\\\+":\\\\+"([A-Z][0-9]+)', html
+                    )
+                    if m_ret:
+                        real_estate_type = m_ret.group(1)
+                        result["property_type_code"] = real_estate_type
+                        logger.info(f"Dynamically resolved realEstateType: {real_estate_type}")
+                    if m_trade:
+                        trade_type_code = m_trade.group(1)
+                        logger.info(f"Dynamically resolved tradeType: {trade_type_code}")
             except Exception as e:
-                logger.error(f"Failed to dynamically resolve meta for article {article_no}: {e}")
+                logger.error(f"Unexpected error in dynamic resolve for {article_no}: {e}")
 
         # ── [2] basicInfo API — 가격 / 면적 / 층수 / 방 / 향 ────────
         basic_url = (
