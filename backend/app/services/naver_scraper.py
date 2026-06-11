@@ -50,7 +50,8 @@ class NaverLandScraper:
         import urllib.parse
         encoded_url = urllib.parse.quote(target_url)
         # keep_headers=true 를 통해 브라우저 위장 헤더를 그대로 전달
-        return f"http://api.scraperapi.com/?api_key={self._scraper_api_key}&url={encoded_url}&keep_headers=true"
+        # premium=true 옵션 추가 (네이버 등 까다로운 사이트는 프리미엄 프록시가 필요할 수 있음. 크레딧 소모량은 10배지만 성공률이 압도적임)
+        return f"https://api.scraperapi.com/?api_key={self._scraper_api_key}&url={encoded_url}&keep_headers=true&premium=true"
 
     # ── 세션 워밍업 ──────────────────────────────────────────
     def _warmup(self):
@@ -65,7 +66,7 @@ class NaverLandScraper:
                 req_url,
                 headers=_FIN_HEADERS,
                 impersonate="chrome",
-                timeout=20,
+                timeout=60,
             )
             time.sleep(0.8)
             self._warmed_up = True
@@ -111,7 +112,7 @@ class NaverLandScraper:
                     req_url,
                     headers=_FIN_HEADERS,
                     impersonate="chrome",
-                    timeout=20, # 프록시 경유 시 응답이 지연될 수 있으므로 타임아웃을 넉넉히 줌
+                    timeout=60, # 프록시 경유 시 응답이 지연될 수 있으므로 타임아웃을 넉넉히 줌
                 )
                 time.sleep(delay)
                 if res.status_code == 200:
@@ -210,7 +211,7 @@ class NaverLandScraper:
                             headers=_FIN_HEADERS,
                             impersonate="chrome",
                             allow_redirects=False,
-                            timeout=20,
+                            timeout=60,
                         )
                         time.sleep(1.0)
                         
@@ -236,7 +237,7 @@ class NaverLandScraper:
                                 req_url_map,
                                 headers=_FIN_HEADERS,
                                 impersonate="chrome",
-                                timeout=20,
+                                timeout=60,
                             )
                             time.sleep(1.0)
                             if res_map.status_code == 200:
