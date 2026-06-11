@@ -8,6 +8,19 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
+# Load environment variables if .env exists
+if [ -f backend/.env ]; then
+    export $(grep -v '^#' backend/.env | xargs)
+fi
+
+# Set defaults if variables are not set
+SERVER_IP=${SERVER_IP:-localhost}
+BACKEND_PORT=${BACKEND_PORT:-8000}
+FRONTEND_PORT=${FRONTEND_PORT:-5173}
+
+# Export VITE_API_BASE_URL so the frontend knows where the backend is
+export VITE_API_BASE_URL="http://${SERVER_IP}:${BACKEND_PORT}"
+
 echo -e "${GREEN}"
 echo -e "=================================================================="
 echo -e "         VeriHouse - 매물 & 건축물대장 검증 솔루션 시작기         "
@@ -18,9 +31,9 @@ echo -e "${NC}"
 trap "kill 0" EXIT
 
 # 1. Start Backend FastAPI
-echo -e "${BLUE}[1/2] FastAPI 백엔드 서버를 시작합니다... (Port: 8000)${NC}"
+echo -e "${BLUE}[1/2] FastAPI 백엔드 서버를 시작합니다... (Port: ${BACKEND_PORT})${NC}"
 cd backend
-./venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
+./venv/bin/uvicorn app.main:app --host 0.0.0.0 --port ${BACKEND_PORT} --reload &
 BACKEND_PID=$!
 cd ..
 
@@ -28,17 +41,17 @@ cd ..
 sleep 2
 
 # 2. Start Frontend Vite
-echo -e "${CYAN}[2/2] React 프론트엔드 개발 서버를 시작합니다... (Port: 5173)${NC}"
+echo -e "${CYAN}[2/2] React 프론트엔드 개발 서버를 시작합니다... (Port: ${FRONTEND_PORT})${NC}"
 cd frontend
-npm run dev &
+npm run dev -- --port ${FRONTEND_PORT} --host 0.0.0.0 &
 FRONTEND_PID=$!
 cd ..
 
 echo -e "${YELLOW}"
 echo -e "------------------------------------------------------------------"
 echo -e "🚀 서비스 구동 완료! 아래 링크로 브라우저에서 접속하세요:"
-echo -e "   👉 백엔드 API 서버: ${GREEN}http://localhost:8000${YELLOW}"
-echo -e "   👉 프론트엔드 대시보드: ${GREEN}http://localhost:5173${YELLOW}"
+echo -e "   👉 백엔드 API 서버: ${GREEN}http://${SERVER_IP}:${BACKEND_PORT}${YELLOW}"
+echo -e "   👉 프론트엔드 대시보드: ${GREEN}http://${SERVER_IP}:${FRONTEND_PORT}${YELLOW}"
 echo -e ""
 echo -e "   * 빠른 테스트를 위해 데모 모드가 기본 탑재되어 있습니다."
 echo -e "   * 종료하시려면 터미널에서 ${RED}Ctrl + C${YELLOW}를 입력해 주세요."

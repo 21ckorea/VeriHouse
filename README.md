@@ -30,13 +30,23 @@ git clone https://github.com/21ckorea/VeriHouse.git
 cd VeriHouse
 ```
 
-### 3. API 키 설정 (환경 변수)
-`backend` 폴더 안에 `.env` 파일을 생성하고 발급받은 API 키를 입력합니다.
+### 3. 환경 변수 설정 (.env)
+`backend` 폴더 안에 `.env` 파일을 생성하고 발급받은 API 키와 서버 설정을 입력합니다.
+
 ```bash
 # backend/.env
+
+# API Keys
 PUBLIC_DATA_SERVICE_KEY=공공데이터포털_건축물대장_인코딩키
 JUSO_API_KEY=행정안전부_도로명주소_승인키
+
+# Server Configuration (배포 시 변경)
+SERVER_IP=localhost
+BACKEND_PORT=8000
+FRONTEND_PORT=5173
 ```
+> **💡 서버에 배포하거나 포트를 변경하려면?**
+> 위 `.env` 파일의 `SERVER_IP`, `BACKEND_PORT`, `FRONTEND_PORT` 값만 한 번 수정해 주시면, 백엔드와 프론트엔드 연동에 필요한 모든 포트와 IP가 **자동으로 적용**됩니다! (수정 후 `./start.sh` 재실행)
 
 ### 4. 패키지 설치
 **백엔드 설치**
@@ -59,26 +69,18 @@ cd ..
 
 ## 🚀 실행 및 사용 방법
 
-설치가 완료되었다면, 프로젝트 최상위 폴더에서 아래 명령어 하나만 실행하면 백엔드와 프론트엔드가 동시에 실행됩니다.
+설치가 완료되었다면, 프로젝트 최상위 폴더에서 아래 명령어 하나만 실행하면 설정한 IP와 포트로 백엔드/프론트엔드가 동시에 실행됩니다.
 
 ```bash
 # Mac / Linux
 ./start.sh
-
-# 윈도우(Windows) 사용자의 경우
-# 터미널 1: 백엔드 실행
-cd backend
-venv\Scripts\activate
-uvicorn app.main:app --reload
-
-# 터미널 2: 프론트엔드 실행
-cd frontend
-npm run dev
 ```
 
+*(윈도우(Windows) 사용자는 `backend`와 `frontend` 폴더에서 각각 서버를 개별 실행해 주셔야 합니다.)*
+
 ### 브라우저 접속
-- 실행 후 웹 브라우저를 열고 **`http://localhost:5173`** 에 접속합니다.
-- (백엔드 API 서버는 `http://localhost:8000` 에서 돌아가고 있습니다.)
+- 실행 후 웹 브라우저를 열고 설정한 **`http://{SERVER_IP}:{FRONTEND_PORT}`** 에 접속합니다.
+- (기본값: `http://localhost:5173`)
 
 ### 주소 조회해보기
 1. 메인 화면의 검색창에 **도로명 주소** 또는 **지번 주소**를 입력합니다.
