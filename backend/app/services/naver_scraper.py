@@ -65,6 +65,7 @@ class NaverLandScraper:
                 headers=_FIN_HEADERS,
                 impersonate="chrome",
                 proxies=self._proxies,
+                verify=False,
                 timeout=60,
             )
             time.sleep(0.8)
@@ -111,6 +112,7 @@ class NaverLandScraper:
                     headers=_FIN_HEADERS,
                     impersonate="chrome",
                     proxies=self._proxies,
+                    verify=False,
                     timeout=60, # 프록시 경유 시 응답이 지연될 수 있으므로 타임아웃을 넉넉히 줌
                 )
                 time.sleep(delay)
@@ -210,6 +212,7 @@ class NaverLandScraper:
                             impersonate="chrome",
                             allow_redirects=False,
                             proxies=self._proxies,
+                            verify=False,
                             timeout=60,
                         )
                         time.sleep(1.0)
@@ -236,6 +239,7 @@ class NaverLandScraper:
                                 headers=_FIN_HEADERS,
                                 impersonate="chrome",
                                 proxies=self._proxies,
+                                verify=False,
                                 timeout=60,
                             )
                             time.sleep(1.0)
