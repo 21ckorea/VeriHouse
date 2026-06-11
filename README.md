@@ -43,12 +43,19 @@ cd VeriHouse
 # API Keys
 PUBLIC_DATA_SERVICE_KEY=공공데이터포털_건축물대장_인코딩키
 JUSO_API_KEY=행정안전부_도로명주소_승인키
+SCRAPER_API_KEY=스크래퍼API_우회키_없으면_빈칸
 
 # Server Configuration (배포 시 변경)
 SERVER_IP=localhost
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
 ```
+> **💡 서버 배포 시 네이버 부동산 차단(Timeout) 우회하기**
+> 오라클 클라우드나 AWS 등 데이터센터 IP에서는 네이버가 접속을 원천 차단합니다. 이를 우회하려면 무료 프록시 API인 **ScraperAPI**를 사용해야 합니다.
+> 1. [ScraperAPI](https://www.scraperapi.com) 에 접속하여 회원가입 (매월 1,000건 무료)
+> 2. 대시보드에서 제공하는 **API Key** 복사
+> 3. 위 `.env` 파일의 `SCRAPER_API_KEY` 항목에 붙여넣기 후 서버 재시작
+
 > **💡 서버에 배포하거나 포트를 변경하려면?**
 > 위 `.env` 파일의 `SERVER_IP`, `BACKEND_PORT`, `FRONTEND_PORT` 값만 한 번 수정해 주시면, 백엔드와 프론트엔드 연동에 필요한 모든 포트와 IP가 **자동으로 적용**됩니다! (수정 후 `./start.sh` 재실행)
 

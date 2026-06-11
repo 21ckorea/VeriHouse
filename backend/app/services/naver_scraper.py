@@ -38,6 +38,19 @@ class NaverLandScraper:
         self._session = requests.Session()
         self._warmed_up = False
         self._ip_blocked = False  # 클라우드 IP 차단 여부 플래그
+        
+        # ScraperAPI 연동 설정
+        import os
+        self._scraper_api_key = os.getenv("SCRAPER_API_KEY", "").strip()
+
+    def _build_scraper_url(self, target_url: str) -> str:
+        """ScraperAPI 키가 있으면 우회 URL을 생성하고, 없으면 원본 URL을 반환합니다."""
+        if not self._scraper_api_key:
+            return target_url
+        import urllib.parse
+        encoded_url = urllib.parse.quote(target_url)
+        # keep_headers=true 를 통해 브라우저 위장 헤더를 그대로 전달
+        return f"http://api.scraperapi.com/?api_key={self._scraper_api_key}&url={encoded_url}&keep_headers=true"
 
     # ── 세션 워밍업 ──────────────────────────────────────────
     def _warmup(self):
@@ -45,19 +58,21 @@ class NaverLandScraper:
         if self._warmed_up or self._ip_blocked:
             return
         try:
+            target_url = "https://fin.land.naver.com/"
+            req_url = self._build_scraper_url(target_url)
+            
             res = self._session.get(
-                "https://fin.land.naver.com/",
+                req_url,
                 headers=_FIN_HEADERS,
                 impersonate="chrome",
-                timeout=10,
+                timeout=20,
             )
             time.sleep(0.8)
             self._warmed_up = True
-            logger.info("Naver Land session warmed up.")
+            logger.info("Naver Land session warmed up (ScraperAPI: %s)", bool(self._scraper_api_key))
         except Exception as e:
             logger.warning(f"Session warmup failed (non-fatal): {e}")
-            # 타임아웃이나 Connection Reset이 발생하면 IP 차단으로 간주
-            if "Connection reset" in str(e) or "timed out" in str(e) or "Timeout" in str(e):
+            if not self._scraper_api_key and ("Connection reset" in str(e) or "timed out" in str(e) or "Timeout" in str(e)):
                 logger.error("Cloud IP seems to be blocked by Naver WAF. Enabling fast-fail.")
                 self._ip_blocked = True
 
@@ -87,14 +102,16 @@ class NaverLandScraper:
         if self._ip_blocked:
             return None
 
+        req_url = self._build_scraper_url(url)
         max_retries = 3
+
         for attempt in range(max_retries):
             try:
                 res = self._session.get(
-                    url,
+                    req_url,
                     headers=_FIN_HEADERS,
                     impersonate="chrome",
-                    timeout=10, # 오라클 클라우드에서 너무 오래 멈춰있지 않도록 타임아웃 단축
+                    timeout=20, # 프록시 경유 시 응답이 지연될 수 있으므로 타임아웃을 넉넉히 줌
                 )
                 time.sleep(delay)
                 if res.status_code == 200:
@@ -107,8 +124,7 @@ class NaverLandScraper:
                 logger.warning(f"HTTP {res.status_code} for {url}")
                 return None
             except Exception as e:
-                # Connection reset or timeout handling
-                if "Connection reset" in str(e) or "timed out" in str(e):
+                if not self._scraper_api_key and ("Connection reset" in str(e) or "timed out" in str(e)):
                     logger.error(f"IP blocked detected during _get_json: {e}")
                     self._ip_blocked = True
                     return None
@@ -184,16 +200,17 @@ class NaverLandScraper:
             try:
                 logger.info(f"PNU code not provided. Dynamically resolving for article {article_no}")
                 article_url = f"https://fin.land.naver.com/articles/{article_no}"
+                req_url_redirect = self._build_scraper_url(article_url)
                 
                 html = ""
                 for attempt in range(3):
                     try:
                         res_redirect = self._session.get(
-                            article_url,
+                            req_url_redirect,
                             headers=_FIN_HEADERS,
                             impersonate="chrome",
                             allow_redirects=False,
-                            timeout=10,
+                            timeout=20,
                         )
                         time.sleep(1.0)
                         
@@ -203,16 +220,23 @@ class NaverLandScraper:
                             time.sleep(wait_time)
                             continue
 
+                        # ScraperAPI는 종종 헤더 자체를 수정하므로, location 헤더를 우선 확인하고, 없으면 본문/URL 확인
                         redirect_url = res_redirect.headers.get("location")
+                        if not redirect_url and self._scraper_api_key and res_redirect.status_code == 200:
+                            # ScraperAPI가 리다이렉트를 알아서 따라가서 최종 페이지(200 OK)를 줘버리는 경우
+                            html = res_redirect.text
+                            break
+
                         if redirect_url:
                             if redirect_url.startswith("/"):
                                 redirect_url = "https://fin.land.naver.com" + redirect_url
-
+                            
+                            req_url_map = self._build_scraper_url(redirect_url)
                             res_map = self._session.get(
-                                redirect_url,
+                                req_url_map,
                                 headers=_FIN_HEADERS,
                                 impersonate="chrome",
-                                timeout=10,
+                                timeout=20,
                             )
                             time.sleep(1.0)
                             if res_map.status_code == 200:
@@ -225,7 +249,7 @@ class NaverLandScraper:
                                 continue
                         break
                     except Exception as e:
-                        if "Connection reset" in str(e) or "timed out" in str(e):
+                        if not self._scraper_api_key and ("Connection reset" in str(e) or "timed out" in str(e)):
                             logger.error(f"IP blocked detected during dynamic resolve: {e}")
                             self._ip_blocked = True
                             break
