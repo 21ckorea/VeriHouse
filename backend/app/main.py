@@ -603,21 +603,28 @@ def search_ledger_by_address(payload: LedgerSearchRequest):
             f"sigunguCd={sc}&bjdongCd={bc}&platGbCd={plat_gb}"
             f"&bun={b}&ji={j}&numOfRows={num}&pageNo={page}&_type=json&serviceKey={encoded_key}"
         )
-        try:
-            resp = std_requests.get(url, timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
-                body = data.get("response", {}).get("body", {})
-                rc   = data.get("response", {}).get("header", {}).get("resultCode", "")
-                if rc == "00":
-                    total_count = int(body.get("totalCount", 0))
-                    items_raw   = body.get("items", {})
-                    items       = items_raw.get("item", []) if items_raw else []
-                    if isinstance(items, dict):
-                        items = [items]
-                    return items, total_count
-        except Exception as e:
-            logger.error(f"Ledger API error [{method}]: {e}")
+        import time
+        for attempt in range(2):
+            try:
+                resp = std_requests.get(url, timeout=25)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    body = data.get("response", {}).get("body", {})
+                    rc   = data.get("response", {}).get("header", {}).get("resultCode", "")
+                    if rc == "00":
+                        total_count = int(body.get("totalCount", 0))
+                        items_raw   = body.get("items", {})
+                        items       = items_raw.get("item", []) if items_raw else []
+                        if isinstance(items, dict):
+                            items = [items]
+                        return items, total_count
+                break # 정상 응답이지만 resultCode가 00이 아니거나 상태코드가 200이 아닌 경우 반복 종료
+            except Exception as e:
+                if attempt == 0:
+                    logger.warning(f"Ledger API error [{method}] - retrying...: {e}")
+                    time.sleep(1)
+                else:
+                    logger.error(f"Ledger API error [{method}] after retry: {e}")
         return [], 0
 
     results = {}
