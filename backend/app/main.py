@@ -604,9 +604,10 @@ def search_ledger_by_address(payload: LedgerSearchRequest):
             f"&bun={b}&ji={j}&numOfRows={num}&pageNo={page}&_type=json&serviceKey={encoded_key}"
         )
         import time
-        for attempt in range(2):
+        # 긴 타임아웃(25초)보다 짧은 타임아웃(8초)으로 여러 번 재시도하는 것이 공공 API 병목을 피하는 데 유리합니다.
+        for attempt in range(3):
             try:
-                resp = std_requests.get(url, timeout=25)
+                resp = std_requests.get(url, timeout=8)
                 if resp.status_code == 200:
                     data = resp.json()
                     body = data.get("response", {}).get("body", {})
@@ -620,11 +621,11 @@ def search_ledger_by_address(payload: LedgerSearchRequest):
                         return items, total_count
                 break # 정상 응답이지만 resultCode가 00이 아니거나 상태코드가 200이 아닌 경우 반복 종료
             except Exception as e:
-                if attempt == 0:
-                    logger.warning(f"Ledger API error [{method}] - retrying...: {e}")
+                if attempt < 2:
+                    logger.warning(f"Ledger API error [{method}] (Attempt {attempt+1}/3) - retrying...: {e}")
                     time.sleep(1)
                 else:
-                    logger.error(f"Ledger API error [{method}] after retry: {e}")
+                    logger.error(f"Ledger API error [{method}] failed after 3 attempts: {e}")
         return [], 0
 
     results = {}
