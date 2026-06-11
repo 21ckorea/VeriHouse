@@ -37,14 +37,15 @@ class NaverLandScraper:
     def __init__(self):
         self._session = requests.Session()
         self._warmed_up = False
+        self._ip_blocked = False  # 클라우드 IP 차단 여부 플래그
 
     # ── 세션 워밍업 ──────────────────────────────────────────
     def _warmup(self):
         """메인 페이지를 미리 방문하여 세션 쿠키를 획득합니다."""
-        if self._warmed_up:
+        if self._warmed_up or self._ip_blocked:
             return
         try:
-            self._session.get(
+            res = self._session.get(
                 "https://fin.land.naver.com/",
                 headers=_FIN_HEADERS,
                 impersonate="chrome",
@@ -55,6 +56,10 @@ class NaverLandScraper:
             logger.info("Naver Land session warmed up.")
         except Exception as e:
             logger.warning(f"Session warmup failed (non-fatal): {e}")
+            # 타임아웃이나 Connection Reset이 발생하면 IP 차단으로 간주
+            if "Connection reset" in str(e) or "timed out" in str(e) or "Timeout" in str(e):
+                logger.error("Cloud IP seems to be blocked by Naver WAF. Enabling fast-fail.")
+                self._ip_blocked = True
 
     # ── URL / ID 파싱 ────────────────────────────────────────
     def extract_article_no(self, url_or_id: str) -> str:
@@ -79,6 +84,9 @@ class NaverLandScraper:
     # ── 내부 GET 헬퍼 ────────────────────────────────────────
     def _get_json(self, url: str, delay: float = 1.0) -> dict | None:
         """curl_cffi로 JSON API를 호출하고 결과를 반환합니다. 429 및 타임아웃 시 재시도합니다."""
+        if self._ip_blocked:
+            return None
+
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -86,7 +94,7 @@ class NaverLandScraper:
                     url,
                     headers=_FIN_HEADERS,
                     impersonate="chrome",
-                    timeout=15,
+                    timeout=10, # 오라클 클라우드에서 너무 오래 멈춰있지 않도록 타임아웃 단축
                 )
                 time.sleep(delay)
                 if res.status_code == 200:
@@ -100,6 +108,11 @@ class NaverLandScraper:
                 return None
             except Exception as e:
                 # Connection reset or timeout handling
+                if "Connection reset" in str(e) or "timed out" in str(e):
+                    logger.error(f"IP blocked detected during _get_json: {e}")
+                    self._ip_blocked = True
+                    return None
+
                 if attempt < max_retries - 1:
                     wait_time = 3 * (attempt + 1)
                     logger.warning(f"Request error for {url} (Attempt {attempt+1}/{max_retries}): {e}. Waiting {wait_time}s...")
@@ -167,7 +180,7 @@ class NaverLandScraper:
         real_estate_type = "C03"  # 기본값
         trade_type_code  = "A1"   # 기본값 (매매)
 
-        if not pnu:
+        if not pnu and not self._ip_blocked:
             try:
                 logger.info(f"PNU code not provided. Dynamically resolving for article {article_no}")
                 article_url = f"https://fin.land.naver.com/articles/{article_no}"
@@ -180,7 +193,7 @@ class NaverLandScraper:
                             headers=_FIN_HEADERS,
                             impersonate="chrome",
                             allow_redirects=False,
-                            timeout=15,
+                            timeout=10,
                         )
                         time.sleep(1.0)
                         
@@ -199,7 +212,7 @@ class NaverLandScraper:
                                 redirect_url,
                                 headers=_FIN_HEADERS,
                                 impersonate="chrome",
-                                timeout=15,
+                                timeout=10,
                             )
                             time.sleep(1.0)
                             if res_map.status_code == 200:
@@ -212,6 +225,11 @@ class NaverLandScraper:
                                 continue
                         break
                     except Exception as e:
+                        if "Connection reset" in str(e) or "timed out" in str(e):
+                            logger.error(f"IP blocked detected during dynamic resolve: {e}")
+                            self._ip_blocked = True
+                            break
+
                         if attempt < 2:
                             wait_time = 3 * (attempt + 1)
                             logger.warning(f"Dynamic resolve error (Attempt {attempt+1}/3): {e}. Waiting {wait_time}s...")
