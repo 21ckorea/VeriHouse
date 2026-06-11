@@ -43,15 +43,16 @@ class NaverLandScraper:
         import os
         self._scraper_api_key = os.getenv("SCRAPER_API_KEY", "").strip()
 
+        # 프록시 설정
+        self._proxies = None
+        if self._scraper_api_key:
+            # ScraperAPI를 프록시 모드로 사용 (curl_cffi의 TLS 위장을 Naver 서버까지 그대로 전달하기 위해)
+            proxy_url = f"http://scraperapi.premium=true:{self._scraper_api_key}@proxy-server.scraperapi.com:8001"
+            self._proxies = {"http": proxy_url, "https": proxy_url}
+
     def _build_scraper_url(self, target_url: str) -> str:
-        """ScraperAPI 키가 있으면 우회 URL을 생성하고, 없으면 원본 URL을 반환합니다."""
-        if not self._scraper_api_key:
-            return target_url
-        import urllib.parse
-        encoded_url = urllib.parse.quote(target_url)
-        # keep_headers=true 를 통해 브라우저 위장 헤더를 그대로 전달
-        # premium=true 옵션 추가 (네이버 등 까다로운 사이트는 프리미엄 프록시가 필요할 수 있음. 크레딧 소모량은 10배지만 성공률이 압도적임)
-        return f"https://api.scraperapi.com/?api_key={self._scraper_api_key}&url={encoded_url}&keep_headers=true&premium=true"
+        """이전 방식(URL 리라이팅)은 더 이상 사용하지 않지만 호환성을 위해 원본 URL을 그대로 반환합니다."""
+        return target_url
 
     # ── 세션 워밍업 ──────────────────────────────────────────
     def _warmup(self):
@@ -59,18 +60,16 @@ class NaverLandScraper:
         if self._warmed_up or self._ip_blocked:
             return
         try:
-            target_url = "https://fin.land.naver.com/"
-            req_url = self._build_scraper_url(target_url)
-            
             res = self._session.get(
-                req_url,
+                "https://fin.land.naver.com/",
                 headers=_FIN_HEADERS,
                 impersonate="chrome",
+                proxies=self._proxies,
                 timeout=60,
             )
             time.sleep(0.8)
             self._warmed_up = True
-            logger.info("Naver Land session warmed up (ScraperAPI: %s)", bool(self._scraper_api_key))
+            logger.info("Naver Land session warmed up (ScraperAPI Proxy: %s)", bool(self._scraper_api_key))
         except Exception as e:
             logger.warning(f"Session warmup failed (non-fatal): {e}")
             if not self._scraper_api_key and ("Connection reset" in str(e) or "timed out" in str(e) or "Timeout" in str(e)):
@@ -103,15 +102,15 @@ class NaverLandScraper:
         if self._ip_blocked:
             return None
 
-        req_url = self._build_scraper_url(url)
         max_retries = 3
 
         for attempt in range(max_retries):
             try:
                 res = self._session.get(
-                    req_url,
+                    url,
                     headers=_FIN_HEADERS,
                     impersonate="chrome",
+                    proxies=self._proxies,
                     timeout=60, # 프록시 경유 시 응답이 지연될 수 있으므로 타임아웃을 넉넉히 줌
                 )
                 time.sleep(delay)
@@ -201,16 +200,16 @@ class NaverLandScraper:
             try:
                 logger.info(f"PNU code not provided. Dynamically resolving for article {article_no}")
                 article_url = f"https://fin.land.naver.com/articles/{article_no}"
-                req_url_redirect = self._build_scraper_url(article_url)
                 
                 html = ""
                 for attempt in range(3):
                     try:
                         res_redirect = self._session.get(
-                            req_url_redirect,
+                            article_url,
                             headers=_FIN_HEADERS,
                             impersonate="chrome",
                             allow_redirects=False,
+                            proxies=self._proxies,
                             timeout=60,
                         )
                         time.sleep(1.0)
@@ -221,10 +220,10 @@ class NaverLandScraper:
                             time.sleep(wait_time)
                             continue
 
-                        # ScraperAPI는 종종 헤더 자체를 수정하므로, location 헤더를 우선 확인하고, 없으면 본문/URL 확인
+                        # 프록시 모드에서는 자동으로 location을 따라가지 않으므로 헤더에서 가져옴
                         redirect_url = res_redirect.headers.get("location")
-                        if not redirect_url and self._scraper_api_key and res_redirect.status_code == 200:
-                            # ScraperAPI가 리다이렉트를 알아서 따라가서 최종 페이지(200 OK)를 줘버리는 경우
+                        if not redirect_url and res_redirect.status_code == 200:
+                            # 만약 이미 리다이렉트되어 200이 떨어졌다면
                             html = res_redirect.text
                             break
 
@@ -232,11 +231,11 @@ class NaverLandScraper:
                             if redirect_url.startswith("/"):
                                 redirect_url = "https://fin.land.naver.com" + redirect_url
                             
-                            req_url_map = self._build_scraper_url(redirect_url)
                             res_map = self._session.get(
-                                req_url_map,
+                                redirect_url,
                                 headers=_FIN_HEADERS,
                                 impersonate="chrome",
+                                proxies=self._proxies,
                                 timeout=60,
                             )
                             time.sleep(1.0)
