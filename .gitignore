@@ -40,3 +40,6 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+
+# mp4 file
+260612_VeriHouse_시연영상.mp4
